@@ -187,19 +187,19 @@ void __attribute__((naked)) coroutine_yield(void)
 
 void __attribute__((naked)) coroutine_sleep_read(int fd)
 {
-    (void) fd;
+    // (void) fd;
     asm volatile(STORE_REGISTERS SLEEP_READ ::: "memory");
 }
 
 void __attribute__((naked)) coroutine_sleep_write(int fd)
 {
-    (void) fd;
+    // (void) fd;
     asm volatile(STORE_REGISTERS SLEEP_WRITE ::: "memory");
 }
 
 void __attribute__((naked)) coroutine_restore_context(void *rsp)
 {
-    (void)rsp;
+    // (void)rsp;
     asm volatile(RESTORE_REGISTERS ::: "memory");
 }
 
