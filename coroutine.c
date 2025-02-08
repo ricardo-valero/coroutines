@@ -122,6 +122,60 @@ typedef enum {
   "popq %rbp\n"                                                                \
   "popq %rdi\n"                                                                \
   "ret\n"
+
+#elif __APPLE__ && __aarch64__
+
+#define STORE_REGISTERS                                                        \
+  "sub sp, sp, #240\n"                                                         \
+  "stp q8, q9, [sp, #0]\n"                                                     \
+  "stp q10, q11, [sp, #32]\n"                                                  \
+  "stp q12, q13, [sp, #64]\n"                                                  \
+  "stp q14, q15, [sp, #96]\n"                                                  \
+  "stp x19, x20, [sp, #128]\n"                                                 \
+  "stp x21, x22, [sp, #144]\n"                                                 \
+  "stp x23, x24, [sp, #160]\n"                                                 \
+  "stp x25, x26, [sp, #176]\n"                                                 \
+  "stp x27, x28, [sp, #192]\n"                                                 \
+  "stp x29, x30, [sp, #208]\n"                                                 \
+  "mov x1, x30\n"                                                              \
+  "str x30, [sp, #224]\n"                                                      \
+  "str x0, [sp, #232]\n"
+
+#define SLEEP_NONE                                                             \
+  "mov x0, sp\n"                                                               \
+  "mov x1, #0\n"                                                               \
+  "b _coroutine_switch_context\n"
+
+#define SLEEP_READ                                                             \
+  "mov x2, x0\n"                                                               \
+  "mov x0, sp\n"                                                               \
+  "mov x1, #1\n"                                                               \
+  "b _coroutine_switch_context\n"
+
+#define SLEEP_WRITE                                                            \
+  "mov x2, x0\n"                                                               \
+  "mov x0, sp\n"                                                               \
+  "mov x1, #2\n"                                                               \
+  "b _coroutine_switch_context\n"
+
+#define RESTORE_REGISTERS                                                      \
+  "mov sp, x0\n"                                                               \
+  "ldp q8, q9, [sp, #0]\n"                                                     \
+  "ldp q10, q11, [sp, #32]\n"                                                  \
+  "ldp q12, q13, [sp, #64]\n"                                                  \
+  "ldp q14, q15, [sp, #96]\n"                                                  \
+  "ldp x19, x20, [sp, #128]\n"                                                 \
+  "ldp x21, x22, [sp, #144]\n"                                                 \
+  "ldp x23, x24, [sp, #160]\n"                                                 \
+  "ldp x25, x26, [sp, #176]\n"                                                 \
+  "ldp x27, x28, [sp, #192]\n"                                                 \
+  "ldp x29, x30, [sp, #208]\n"                                                 \
+  "mov x1, x30\n"                                                              \
+  "ldr x30, [sp, #224]\n"                                                      \
+  "ldr x0, [sp, #232]\n"                                                       \
+  "add sp, sp, #240\n"                                                         \
+  "ret x1\n"
+
 #else
 #error Unsupported platform
 #endif
@@ -241,7 +295,14 @@ void coroutine_go(void (*f)(void*), void *arg)
     } else {
         da_append(&contexts, ((Context){0}));
         id = contexts.count-1;
-        contexts.items[id].stack_base = mmap(NULL, STACK_CAPACITY, PROT_WRITE|PROT_READ, MAP_PRIVATE|MAP_STACK|MAP_ANONYMOUS|MAP_GROWSDOWN, -1, 0);
+        contexts.items[id].stack_base = mmap(NULL, STACK_CAPACITY, PROT_WRITE | PROT_READ,
+        // @arch
+        #ifdef __APPLE__
+            MAP_PRIVATE | MAP_ANONYMOUS,
+        #else
+            MAP_PRIVATE | MAP_STACK | MAP_ANONYMOUS | MAP_GROWSDOWN,
+        #endif
+            -1, 0);
         assert(contexts.items[id].stack_base != MAP_FAILED);
     }
 
@@ -257,6 +318,37 @@ void coroutine_go(void (*f)(void*), void *arg)
     *(--rsp) = 0;   // push r13
     *(--rsp) = 0;   // push r14
     *(--rsp) = 0;   // push r15
+    #elif __aarch64__
+    *(--rsp) = arg;
+    *(--rsp) = coroutine__finish_current;
+    *(--rsp) = f; // push r0
+    *(--rsp) = 0; // push r29
+    *(--rsp) = 0; // push r28
+    *(--rsp) = 0; // push r27
+    *(--rsp) = 0; // push r26
+    *(--rsp) = 0; // push r25
+    *(--rsp) = 0; // push r24
+    *(--rsp) = 0; // push r23
+    *(--rsp) = 0; // push r22
+    *(--rsp) = 0; // push r21
+    *(--rsp) = 0; // push r20
+    *(--rsp) = 0; // push r19
+    *(--rsp) = 0; // push v15
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v14
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v13
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v12
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v11
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v10
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v09
+    *(--rsp) = 0;
+    *(--rsp) = 0; // push v08
+    *(--rsp) = 0;
     #else
     #error Unsupported architecture
     #endif
