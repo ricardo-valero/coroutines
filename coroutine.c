@@ -82,75 +82,71 @@ typedef enum {
     SM_WRITE,
 } Sleep_Mode;
 
+#if __linux__ && __x86_64__
 // Linux x86_64 call convention
 // %rdi, %rsi, %rdx, %rcx, %r8, and %r9
 
+#define STORE_REGISTERS                                                        \
+  "pushq %rdi\n"                                                               \
+  "pushq %rbp\n"                                                               \
+  "pushq %rbx\n"                                                               \
+  "pushq %r12\n"                                                               \
+  "pushq %r13\n"                                                               \
+  "pushq %r14\n"                                                               \
+  "pushq %r15\n"
+
+#define SLEEP_NONE                                                             \
+  "movq %rsp, %rdi\n"                                                          \
+  "movq $0, %rsi\n"                                                            \
+  "jmp coroutine_switch_context\n"
+
+#define SLEEP_READ                                                             \
+  "movq %rdi, %rdx\n"                                                          \
+  "movq %rsp, %rdi\n"                                                          \
+  "movq $1, %rsi\n"                                                            \
+  "jmp coroutine_switch_context\n"
+
+#define SLEEP_WRITE                                                            \
+  "movq %rdi, %rdx\n"                                                          \
+  "movq %rsp, %rdi\n"                                                          \
+  "movq $2, %rsi\n"                                                            \
+  "jmp coroutine_switch_context\n"
+
+#define RESTORE_REGISTERS                                                      \
+  "movq %rdi, %rsp\n"                                                          \
+  "popq %r15\n"                                                                \
+  "popq %r14\n"                                                                \
+  "popq %r13\n"                                                                \
+  "popq %r12\n"                                                                \
+  "popq %rbx\n"                                                                \
+  "popq %rbp\n"                                                                \
+  "popq %rdi\n"                                                                \
+  "ret\n"
+#else
+#error Unsupported platform
+#endif
+
 void __attribute__((naked)) coroutine_yield(void)
 {
-    // @arch
-    asm(
-    "    pushq %rdi\n"
-    "    pushq %rbp\n"
-    "    pushq %rbx\n"
-    "    pushq %r12\n"
-    "    pushq %r13\n"
-    "    pushq %r14\n"
-    "    pushq %r15\n"
-    "    movq %rsp, %rdi\n"     // rsp
-    "    movq $0, %rsi\n"       // sm = SM_NONE
-    "    jmp coroutine_switch_context\n");
+    asm volatile (STORE_REGISTERS SLEEP_NONE ::: "memory");
 }
 
 void __attribute__((naked)) coroutine_sleep_read(int fd)
 {
     (void) fd;
-    // @arch
-    asm(
-    "    pushq %rdi\n"
-    "    pushq %rbp\n"
-    "    pushq %rbx\n"
-    "    pushq %r12\n"
-    "    pushq %r13\n"
-    "    pushq %r14\n"
-    "    pushq %r15\n"
-    "    movq %rdi, %rdx\n"     // fd
-    "    movq %rsp, %rdi\n"     // rsp
-    "    movq $1, %rsi\n"       // sm = SM_READ
-    "    jmp coroutine_switch_context\n");
+    asm volatile(STORE_REGISTERS SLEEP_READ ::: "memory");
 }
 
 void __attribute__((naked)) coroutine_sleep_write(int fd)
 {
     (void) fd;
-    // @arch
-    asm(
-    "    pushq %rdi\n"
-    "    pushq %rbp\n"
-    "    pushq %rbx\n"
-    "    pushq %r12\n"
-    "    pushq %r13\n"
-    "    pushq %r14\n"
-    "    pushq %r15\n"
-    "    movq %rdi, %rdx\n"     // fd
-    "    movq %rsp, %rdi\n"     // rsp
-    "    movq $2, %rsi\n"       // sm = SM_WRITE
-    "    jmp coroutine_switch_context\n");
+    asm volatile(STORE_REGISTERS SLEEP_WRITE ::: "memory");
 }
 
 void __attribute__((naked)) coroutine_restore_context(void *rsp)
 {
-    // @arch
     (void)rsp;
-    asm(
-    "    movq %rdi, %rsp\n"
-    "    popq %r15\n"
-    "    popq %r14\n"
-    "    popq %r13\n"
-    "    popq %r12\n"
-    "    popq %rbx\n"
-    "    popq %rbp\n"
-    "    popq %rdi\n"
-    "    ret\n");
+    asm volatile(RESTORE_REGISTERS ::: "memory");
 }
 
 void coroutine_switch_context(void *rsp, Sleep_Mode sm, int fd)
@@ -251,6 +247,7 @@ void coroutine_go(void (*f)(void*), void *arg)
 
     void **rsp = (void**)((char*)contexts.items[id].stack_base + STACK_CAPACITY);
     // @arch
+    #ifdef __x86_64__
     *(--rsp) = coroutine__finish_current;
     *(--rsp) = f;
     *(--rsp) = arg; // push rdi
@@ -260,6 +257,9 @@ void coroutine_go(void (*f)(void*), void *arg)
     *(--rsp) = 0;   // push r13
     *(--rsp) = 0;   // push r14
     *(--rsp) = 0;   // push r15
+    #else
+    #error Unsupported architecture
+    #endif
     contexts.items[id].rsp = rsp;
 
     da_append(&active, id);
